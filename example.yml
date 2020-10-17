@@ -1,0 +1,20 @@
+apiVersion: "stolon.io/v1"
+kind: Cluster
+metadata:
+  name: example
+spec:
+  backups:
+    s3:
+      bucket: example-backups
+      prefix: sub/folder
+      region: us-east-1
+  image: sorintlab/stolon:master-pg12
+  keeper:
+    replicas: 2
+  proxy:
+    replicas: 2
+  sentinel:
+    replicas: 3
+  storage:
+    # TODO: Make resizing work
+    size: 500Mi

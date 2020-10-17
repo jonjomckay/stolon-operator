@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+#      affinity:
+#        podAntiAffinity:
+#          requiredDuringSchedulingIgnoredDuringExecution:
+#            - topologyKey: kubernetes.io/hostname
+      containers:
+        - name: proxy
+          command:
+            - "/bin/bash"
+            - "-ec"
+            - |
+              exec gosu stolon stolon-proxy
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: STPROXY_CLUSTER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['stolon-cluster']
+            - name: STPROXY_STORE_BACKEND
+              value: "kubernetes"
+            - name: STPROXY_KUBE_RESOURCE_KIND
+              value: "configmap"
+            - name: STPROXY_LISTEN_ADDRESS
+              value: "0.0.0.0"
+            - name: STPROXY_LOG_LEVEL
+              value: info
+            - name: STPROXY_METRICS_LISTEN_ADDRESS
+              value: "0.0.0.0:8080"
+          ports:
+            - containerPort: 5432
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 25Mi
+            limits:
+              cpu: 200m
+              memory: 50Mi

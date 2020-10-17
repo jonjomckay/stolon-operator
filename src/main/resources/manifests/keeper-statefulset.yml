@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: StatefulSet
+spec:
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        iam.amazonaws.com/role: "{{ backup_iam_role.iam_role.role_name }}"
+    spec:
+#      affinity:
+#        podAntiAffinity:
+#          requiredDuringSchedulingIgnoredDuringExecution:
+#            - topologyKey: kubernetes.io/hostname
+      containers:
+        - name: keeper
+          command:
+            - "/bin/bash"
+            - "-ec"
+            - |
+              # Generate our keeper uid using the pod index
+              IFS='-' read -ra ADDR <<< "$(hostname)"
+              export STKEEPER_UID="keeper${ADDR[-1]}"
+              export STKEEPER_PG_LISTEN_ADDRESS=$POD_IP
+              export STOLON_DATA=/stolon-data
+              chown stolon:stolon $STOLON_DATA
+              exec gosu stolon stolon-keeper --data-dir $STOLON_DATA
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: STKEEPER_CLUSTER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['stolon-cluster']
+            - name: STKEEPER_STORE_BACKEND
+              value: "kubernetes"
+            - name: STKEEPER_KUBE_RESOURCE_KIND
+              value: "configmap"
+            - name: STKEEPER_LOG_LEVEL
+              value: info
+            - name: STKEEPER_PG_REPL_USERNAME
+              value: "{{ replicator.username }}"
+            - name: STKEEPER_PG_REPL_PASSWORD
+              value: "{{ replicator.password }}"
+            - name: STKEEPER_PG_SU_USERNAME
+              value: "{{ admin.username }}"
+            - name: STKEEPER_METRICS_LISTEN_ADDRESS
+              value: "0.0.0.0:8080"
+          ports:
+            - containerPort: 5432
+            - containerPort: 8080
+          readinessProbe:
+            exec:
+              command:
+                - "sh"
+                - "-c"
+                - "PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} psql -w --host ${POD_IP} -U ${STKEEPER_PG_SU_USERNAME} -c 'SELECT 1'"
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+#          resources:
+#            requests:
+#              cpu: 500m
+#              memory: 4Gi
+#            limits:
+#              cpu: 2
+#              memory: 10Gi
+          volumeMounts:
+            - mountPath: /stolon-data
+              name: data
+            - mountPath: /etc/secrets/stolon
+              name: stolon
+#        - name: backup
+#          command: ["/usr/local/bin/supercronic", "/etc/cron.d/wal-e"]
+##          resources:
+##            requests:
+##              cpu: 100m
+##              memory: 512Mi
+##            limits:
+##              cpu: 1000m
+##              memory: 1024Mi
+#          env:
+#            - name: PGHOST
+#              valueFrom:
+#                fieldRef:
+#                  fieldPath: status.podIP
+#            - name: PGUSER
+#              value: "{{ admin.username }}"
+#          volumeMounts:
+#            - mountPath: /stolon-data
+#              name: data
+      volumes:
+        - name: stolon
